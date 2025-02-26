@@ -21,6 +21,41 @@
     let hiddenPostsCount = 0;
     let hiddenPostsLog = [];
 
+    // Add CSS for blurred posts
+    function addBlurCSS() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .x-content-filter-blurred {
+                filter: blur(5px);
+                transition: filter 0.3s ease;
+            }
+            .x-content-filter-blurred:hover {
+                filter: blur(3px);
+            }
+            .x-content-filter-analyzing {
+                position: relative;
+            }
+            .x-content-filter-analyzing::after {
+                content: "Analyzing...";
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                background-color: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 4px;
+                font-size: 12px;
+                text-align: center;
+                border-radius: 4px;
+                pointer-events: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Add the CSS when the script loads
+    addBlurCSS();
+
     function createOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'hiddenPostsOverlay';
@@ -72,13 +107,26 @@
             const postTextElement = tweetArticle.querySelector('[data-testid="tweetText"]');
             const postText = postTextElement ? postTextElement.innerText.trim() : '';
 
-            if (postId) {
+            if (postId && !post.hasAttribute('data-x-content-filter-processed')) {
+                // Mark as being processed to avoid duplicate processing
+                post.setAttribute('data-x-content-filter-processed', 'true');
+                
+                // Apply blur immediately while analyzing
+                post.classList.add('x-content-filter-blurred', 'x-content-filter-analyzing');
+                
+                // Check for cached analysis first
                 let analysis = await getCachedAnalysis(postId);
                 if (!analysis) {
+                    // No cached result, need to analyze
                     analysis = await analyzeTweet(postText, apiKey);
                     await cacheAnalysis(postId, analysis);
                 }
-                applyPostVisibility(postId, analysis);
+                
+                // Remove the analyzing indicator
+                post.classList.remove('x-content-filter-analyzing');
+                
+                // Apply visibility based on analysis
+                applyPostVisibility(postId, analysis, post);
             }
         });
     }
@@ -110,15 +158,22 @@
         return null;
     }
 
-    function applyPostVisibility(postId, analysis) {
+    function applyPostVisibility(postId, analysis, postElement) {
         if (typeof analysis === 'object' && analysis !== null) {
             const shouldHide = topicsConfig.some(topic => 
                 topic.topic in analysis && analysis[topic.topic] > topic.threshold
             );
 
-            const postElement = findPostElement(postId);
-            if (shouldHide) {
-                if (postElement.style.display !== 'none') {
+            if (!postElement) {
+                postElement = findPostElement(postId);
+            }
+
+            if (postElement) {
+                // Remove blur if content is acceptable
+                if (!shouldHide) {
+                    postElement.classList.remove('x-content-filter-blurred');
+                } else {
+                    // Keep it hidden for filtered content
                     postElement.style.display = 'none';
                     const tweetUrl = `https://x.com/user/status/${postId}`;
                     const tweetText = postElement.querySelector('[data-testid="tweetText"]')?.innerText.trim() || 'Text not found';
@@ -126,6 +181,12 @@
                     const message = `Post ${postId} hidden: ${tweetUrl}\n${tweetText}\nScores: ${scores}`;
                     updateOverlay(message);
                 }
+            }
+        } else {
+            console.log(`Skipping post ${postId} due to invalid analysis result`);
+            // Remove blur if we can't analyze it
+            if (postElement) {
+                postElement.classList.remove('x-content-filter-blurred', 'x-content-filter-analyzing');
             }
         }
     }
@@ -212,6 +273,26 @@
 
     const debouncedCheck = debounce(checkForNewPosts, 300);
 
+    // Function to handle new content being added to the DOM
+    function observeForNewContent() {
+        const observer = new MutationObserver((mutations) => {
+            let hasNewPosts = false;
+            mutations.forEach(mutation => {
+                if (mutation.addedNodes.length > 0) {
+                    hasNewPosts = true;
+                }
+            });
+            if (hasNewPosts) {
+                debouncedCheck();
+            }
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
     window.addEventListener('scroll', () => {
         if (window.location.hostname === 'x.com') {
             debouncedCheck();
@@ -220,5 +301,6 @@
 
     if (window.location.hostname === 'x.com') {
         checkForNewPosts();
+        observeForNewContent();
     }
 })();

@@ -4,6 +4,41 @@ const topicsConfig = [
     {"topic": "negativity", "description": "posts with overly negative sentiment", "threshold": 0.9}
 ];
 
+// Add CSS for blurred posts
+function addBlurCSS() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .x-content-filter-blurred {
+            filter: blur(5px);
+            transition: filter 0.3s ease;
+        }
+        .x-content-filter-blurred:hover {
+            filter: blur(3px);
+        }
+        .x-content-filter-analyzing {
+            position: relative;
+        }
+        .x-content-filter-analyzing::after {
+            content: "Analyzing...";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px;
+            font-size: 12px;
+            text-align: center;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Add the CSS when the script loads
+addBlurCSS();
+
 // Function to check for new posts on the page
 async function checkForNewPosts() {
     // Early check for API key
@@ -26,13 +61,26 @@ async function checkForNewPosts() {
         const postTextElement = tweetArticle.querySelector('[data-testid="tweetText"]');
         const postText = postTextElement ? postTextElement.innerText.trim() : '';
 
-        if (postId) {
+        if (postId && !post.hasAttribute('data-x-content-filter-processed')) {
+            // Mark as being processed to avoid duplicate processing
+            post.setAttribute('data-x-content-filter-processed', 'true');
+            
+            // Apply blur immediately while analyzing
+            post.classList.add('x-content-filter-blurred', 'x-content-filter-analyzing');
+            
+            // Check for cached analysis first
             let analysis = await getCachedAnalysis(postId);
             if (!analysis) {
+                // No cached result, need to analyze
                 analysis = await analyzeTweet(postText, apiKey);
                 await cacheAnalysis(postId, analysis);
             }
-            applyPostVisibility(postId, analysis);
+            
+            // Remove the analyzing indicator
+            post.classList.remove('x-content-filter-analyzing');
+            
+            // Apply visibility based on analysis
+            applyPostVisibility(postId, analysis, post);
         }
     });
 }
@@ -54,34 +102,44 @@ async function cacheAnalysis(postId, analysis) {
 }
 
 // Function to apply post visibility based on analysis
-function applyPostVisibility(postId, analysis) {
+function applyPostVisibility(postId, analysis, postElement) {
     if (typeof analysis === 'object' && analysis !== null) {
         const shouldHide = topicsConfig.some(topic => 
             topic.topic in analysis && analysis[topic.topic] > topic.threshold
         );
 
-        if (shouldHide) {
-            const postElement = findPostElement(postId);
-            if (postElement) {
-                if (postElement.style.display !== 'none') {
-                    postElement.style.display = 'none';
-                    const tweetUrl = `https://x.com/user/status/${postId}`;
-                    const tweetText = postElement.querySelector('[data-testid="tweetText"]')?.innerText.trim() || 'Text not found';
-                    console.log(`Post ${postId} hidden due to high scores:`);
-                    topicsConfig.forEach(topic => {
-                        if (topic.topic in analysis) {
-                            console.log(`${topic.topic}: ${analysis[topic.topic]}`);
-                        }
-                    });
-                    console.log(`Tweet URL: ${tweetUrl}`);
-                    console.log(`Tweet Text: ${tweetText}`);
-                }
+        if (!postElement) {
+            postElement = findPostElement(postId);
+        }
+
+        if (postElement) {
+            // Remove blur if content is acceptable
+            if (!shouldHide) {
+                postElement.classList.remove('x-content-filter-blurred');
+                console.log(`Post ${postId} passed filter checks.`);
             } else {
-                console.log(`Could not find element for post ${postId} to hide`);
+                // Keep it hidden for filtered content
+                postElement.style.display = 'none';
+                const tweetUrl = `https://x.com/user/status/${postId}`;
+                const tweetText = postElement.querySelector('[data-testid="tweetText"]')?.innerText.trim() || 'Text not found';
+                console.log(`Post ${postId} hidden due to high scores:`);
+                topicsConfig.forEach(topic => {
+                    if (topic.topic in analysis) {
+                        console.log(`${topic.topic}: ${analysis[topic.topic]}`);
+                    }
+                });
+                console.log(`Tweet URL: ${tweetUrl}`);
+                console.log(`Tweet Text: ${tweetText}`);
             }
+        } else {
+            console.log(`Could not find element for post ${postId} to hide`);
         }
     } else {
         console.log(`Skipping post ${postId} due to invalid analysis result`);
+        // Remove blur if we can't analyze it
+        if (postElement) {
+            postElement.classList.remove('x-content-filter-blurred', 'x-content-filter-analyzing');
+        }
     }
 }
 
@@ -215,7 +273,28 @@ window.addEventListener('scroll', () => {
     }
 });
 
+// Function to handle new content being added to the DOM
+function observeForNewContent() {
+    const observer = new MutationObserver((mutations) => {
+        let hasNewPosts = false;
+        mutations.forEach(mutation => {
+            if (mutation.addedNodes.length > 0) {
+                hasNewPosts = true;
+            }
+        });
+        if (hasNewPosts) {
+            debouncedCheck();
+        }
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
 // Initial check when the page loads
 if (window.location.hostname === 'x.com') {
     checkForNewPosts();
+    observeForNewContent();
 }

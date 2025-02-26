@@ -6,6 +6,15 @@
 
 The X Content Filter is a browser extension that analyzes and filters content on X.com based on configured topics. Unlike the original version which used Groq, this fork uses the OpenRouter API to perform the analysis, giving you access to powerful LLM models through a more flexible API.
 
+## Features
+
+- **Content Analysis**: Uses AI to analyze tweets for configured topics (politics, negativity, etc.)
+- **Smart Filtering**: Automatically hides content that exceeds your chosen thresholds
+- **Content Blurring**: Blurs all new tweets until analysis is complete, preventing unwanted exposure
+- **Visual Indicators**: Shows when content is being analyzed with "Analyzing..." labels
+- **Caching**: Remembers previously analyzed tweets to reduce API calls
+- **Mobile Support**: Works on mobile browsers via userscript
+
 ## Why OpenRouter instead of Groq?
 
 OpenRouter offers several advantages:
@@ -24,9 +33,19 @@ OpenRouter offers several advantages:
 
 ## Usage
 
-- The extension automatically analyzes and hides posts on X.com that exceed the configured thresholds using the OpenRouter API.
+- The extension automatically blurs and analyzes posts on X.com as they appear in your feed.
+- Posts that exceed the configured thresholds will remain hidden; safe posts will be unblurred.
 - When you first use the extension, it will prompt you to enter your OpenRouter API key.
 - To reset the cache, run `resetCache()` in the browser console.
+
+## How It Works
+
+1. **Initial Blurring**: All new tweets are immediately blurred when they load to prevent unwanted exposure.
+2. **Analysis**: The extension uses OpenRouter API to analyze the tweet content based on configured topics.
+3. **Decision**: 
+   - If content passes filters: The blur is removed and content becomes visible.
+   - If content fails filters: The tweet is hidden completely.
+4. **Visual Feedback**: Blurred tweets show an "Analyzing..." indicator while being processed.
 
 ## Configuration
 
