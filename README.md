@@ -1,6 +1,6 @@
 # X Content Filter (OpenRouter Edition)
 
-> This is a fork of the original X Content Filter project, modified to use OpenRouter API instead of Groq API.
+> This is a fork of the original X Content Filter project, modified to use OpenRouter API instead of Groq API, and to hide content before it has been scanned.
 
 ## Overview
 
@@ -78,3 +78,4 @@ https://github.com/quoid/userscripts
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details. 
 
 This is a fork of the original X Content Filter project. All modifications are provided under the same Apache 2.0 license.
+
