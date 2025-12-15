@@ -58,16 +58,26 @@ async function checkForNewPosts() {
             .find(a => a.href.includes('/status/'))
             ?.href.split('/')
             .find((part, index, array) => array[index - 1] === 'status');
-        const postTextElement = tweetArticle.querySelector('[data-testid="tweetText"]');
-        const postText = postTextElement ? postTextElement.innerText.trim() : '';
+
+        // Get the main tweet text (first tweetText element)
+        const allTweetTextElements = tweetArticle.querySelectorAll('[data-testid="tweetText"]');
+        const postText = allTweetTextElements.length > 0 ? allTweetTextElements[0].innerText.trim() : '';
+
+        // Extract quoted tweet text if present
+        const quoteTweetElement = tweetArticle.querySelector('[data-testid="quoteTweet"]');
+        let quotedTweetText = '';
+        if (quoteTweetElement) {
+            const quotedTextElement = quoteTweetElement.querySelector('[data-testid="tweetText"]');
+            quotedTweetText = quotedTextElement ? quotedTextElement.innerText.trim() : '';
+        }
 
         if (postId && !post.hasAttribute('data-x-content-filter-processed')) {
             // Mark as being processed to avoid duplicate processing
             post.setAttribute('data-x-content-filter-processed', 'true');
-            
+
             // Apply blur immediately while analyzing
             post.classList.add('x-content-filter-blurred', 'x-content-filter-analyzing');
-            
+
             // Check for cached analysis first
             let analysis = await getCachedAnalysis(postId);
             if (!analysis) {
@@ -75,12 +85,23 @@ async function checkForNewPosts() {
                 analysis = await analyzeTweet(postText, apiKey);
                 await cacheAnalysis(postId, analysis);
             }
-            
+
+            // Analyze quoted tweet if present
+            let quotedAnalysis = null;
+            if (quotedTweetText) {
+                const quotedCacheKey = `${postId}_quoted`;
+                quotedAnalysis = await getCachedAnalysis(quotedCacheKey);
+                if (!quotedAnalysis) {
+                    quotedAnalysis = await analyzeTweet(quotedTweetText, apiKey);
+                    await cacheAnalysis(quotedCacheKey, quotedAnalysis);
+                }
+            }
+
             // Remove the analyzing indicator
             post.classList.remove('x-content-filter-analyzing');
-            
-            // Apply visibility based on analysis
-            applyPostVisibility(postId, analysis, post);
+
+            // Apply visibility based on analysis (including quoted tweet)
+            applyPostVisibility(postId, analysis, post, quotedAnalysis);
         }
     });
 }
@@ -102,11 +123,22 @@ async function cacheAnalysis(postId, analysis) {
 }
 
 // Function to apply post visibility based on analysis
-function applyPostVisibility(postId, analysis, postElement) {
+function applyPostVisibility(postId, analysis, postElement, quotedAnalysis = null) {
     if (typeof analysis === 'object' && analysis !== null) {
-        const shouldHide = topicsConfig.some(topic => 
+        // Check if main tweet should be hidden
+        const mainShouldHide = topicsConfig.some(topic =>
             topic.topic in analysis && analysis[topic.topic] > topic.threshold
         );
+
+        // Check if quoted tweet should be hidden
+        let quotedShouldHide = false;
+        if (quotedAnalysis && typeof quotedAnalysis === 'object') {
+            quotedShouldHide = topicsConfig.some(topic =>
+                topic.topic in quotedAnalysis && quotedAnalysis[topic.topic] > topic.threshold
+            );
+        }
+
+        const shouldHide = mainShouldHide || quotedShouldHide;
 
         if (!postElement) {
             postElement = findPostElement(postId);
@@ -116,18 +148,30 @@ function applyPostVisibility(postId, analysis, postElement) {
             // Remove blur if content is acceptable
             if (!shouldHide) {
                 postElement.classList.remove('x-content-filter-blurred');
-                console.log(`Post ${postId} passed filter checks.`);
+                const tweetPreview = postElement.querySelector('[data-testid="tweetText"]')?.innerText.trim().slice(0, 50) || '';
+                console.log(`Post ${postId} passed filter checks: "${tweetPreview}${tweetPreview.length >= 50 ? '...' : ''}"`);
             } else {
                 // Keep it hidden for filtered content
                 postElement.style.display = 'none';
                 const tweetUrl = `https://x.com/user/status/${postId}`;
                 const tweetText = postElement.querySelector('[data-testid="tweetText"]')?.innerText.trim() || 'Text not found';
-                console.log(`Post ${postId} hidden due to high scores:`);
-                topicsConfig.forEach(topic => {
-                    if (topic.topic in analysis) {
-                        console.log(`${topic.topic}: ${analysis[topic.topic]}`);
-                    }
-                });
+
+                if (mainShouldHide) {
+                    console.log(`Post ${postId} hidden due to main tweet scores:`);
+                    topicsConfig.forEach(topic => {
+                        if (topic.topic in analysis) {
+                            console.log(`  ${topic.topic}: ${analysis[topic.topic]}`);
+                        }
+                    });
+                }
+                if (quotedShouldHide) {
+                    console.log(`Post ${postId} hidden due to quoted tweet scores:`);
+                    topicsConfig.forEach(topic => {
+                        if (topic.topic in quotedAnalysis) {
+                            console.log(`  ${topic.topic}: ${quotedAnalysis[topic.topic]}`);
+                        }
+                    });
+                }
                 console.log(`Tweet URL: ${tweetUrl}`);
                 console.log(`Tweet Text: ${tweetText}`);
             }
