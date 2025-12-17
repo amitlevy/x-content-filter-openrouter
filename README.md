@@ -1,13 +1,12 @@
 # X Content Filter (OpenRouter Edition)
-
-> This is a fork of the original X Content Filter project, modified to use OpenRouter API instead of Groq API, and to hide content before it has been scanned.
-
+
 ## Overview
 
-The X Content Filter is a browser extension that analyzes and filters content on X.com based on configured topics. Unlike the original version which used Groq, this fork uses the OpenRouter API to perform the analysis, giving you access to powerful LLM models through a more flexible API.
+The X Content Filter is a browser extension that analyzes and filters content on X.com based on configured topics using AI. It uses the OpenRouter API to perform the analysis, giving you access to powerful and cheap LLM models, by default Llama 8B, costing negligible amounts of money, though you do need to provide your own key.
 
 ## Features
 
+- **Quote Tweets**: If either the main twitter or the quoted tweet doesn't pass your filters, both are blocked.
 - **Content Analysis**: Uses AI to analyze tweets for configured topics (politics, negativity, etc.)
 - **Smart Filtering**: Automatically hides content that exceeds your chosen thresholds
 - **Content Blurring**: Blurs all new tweets until analysis is complete, preventing unwanted exposure
