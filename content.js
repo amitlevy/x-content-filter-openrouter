@@ -266,7 +266,7 @@ async function analyzeTweet(tweetText, apiKey) {
         },
         {
             role: "user",
-            content: tweetText
+            content: `${tweetText} /no_think`
         }
     ];
 
