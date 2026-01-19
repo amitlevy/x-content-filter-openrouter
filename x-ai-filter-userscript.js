@@ -245,7 +245,7 @@
             },
             {
                 role: "user",
-                content: tweetText
+                content: `${tweetText} /no_think`
             }
         ];
 
