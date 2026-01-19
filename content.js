@@ -1,8 +1,28 @@
-// Configuration object for topics
-const topicsConfig = [
-    {"topic": "politics", "description": "posts about political subjects", "threshold": 0.8},
-    {"topic": "negativity", "description": "posts with overly negative sentiment", "threshold": 0.9}
+// Configuration object for topics (defaults, will be overridden by storage)
+let topicsConfig = [
+    { topic: "politics", description: "posts about political subjects", threshold: 0.8, enabled: true },
+    { topic: "negativity", description: "posts with overly negative sentiment", threshold: 0.9, enabled: true }
 ];
+
+// Load config from storage
+async function initConfig() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['topicsConfig'], (result) => {
+            if (result.topicsConfig && Array.isArray(result.topicsConfig)) {
+                topicsConfig = result.topicsConfig;
+            }
+            resolve();
+        });
+    });
+}
+
+// Listen for storage changes to update config dynamically
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.topicsConfig) {
+        topicsConfig = changes.topicsConfig.newValue || topicsConfig;
+        console.log('X Content Filter: Config updated', topicsConfig);
+    }
+});
 
 // Add CSS for blurred posts
 function addBlurCSS() {
@@ -44,7 +64,14 @@ async function checkForNewPosts() {
     // Early check for API key
     const apiKey = await getOpenRouterApiKey();
     if (!apiKey) {
-        console.error("No API key provided. Aborting analysis.");
+        console.warn("X Content Filter: No API key configured. Please set your API key in the extension settings.");
+        return;
+    }
+
+    // Get enabled topics for filtering
+    const enabledTopics = topicsConfig.filter(t => t.enabled);
+    if (enabledTopics.length === 0) {
+        console.log("X Content Filter: No topics enabled for filtering");
         return;
     }
 
@@ -125,15 +152,18 @@ async function cacheAnalysis(postId, analysis) {
 // Function to apply post visibility based on analysis
 function applyPostVisibility(postId, analysis, postElement, quotedAnalysis = null) {
     if (typeof analysis === 'object' && analysis !== null) {
+        // Get only enabled topics for filtering
+        const enabledTopics = topicsConfig.filter(t => t.enabled);
+
         // Check if main tweet should be hidden
-        const mainShouldHide = topicsConfig.some(topic =>
+        const mainShouldHide = enabledTopics.some(topic =>
             topic.topic in analysis && analysis[topic.topic] > topic.threshold
         );
 
         // Check if quoted tweet should be hidden
         let quotedShouldHide = false;
         if (quotedAnalysis && typeof quotedAnalysis === 'object') {
-            quotedShouldHide = topicsConfig.some(topic =>
+            quotedShouldHide = enabledTopics.some(topic =>
                 topic.topic in quotedAnalysis && quotedAnalysis[topic.topic] > topic.threshold
             );
         }
@@ -158,7 +188,7 @@ function applyPostVisibility(postId, analysis, postElement, quotedAnalysis = nul
 
                 if (mainShouldHide) {
                     console.log(`Post ${postId} hidden due to main tweet scores:`);
-                    topicsConfig.forEach(topic => {
+                    enabledTopics.forEach(topic => {
                         if (topic.topic in analysis) {
                             console.log(`  ${topic.topic}: ${analysis[topic.topic]}`);
                         }
@@ -166,7 +196,7 @@ function applyPostVisibility(postId, analysis, postElement, quotedAnalysis = nul
                 }
                 if (quotedShouldHide) {
                     console.log(`Post ${postId} hidden due to quoted tweet scores:`);
-                    topicsConfig.forEach(topic => {
+                    enabledTopics.forEach(topic => {
                         if (topic.topic in quotedAnalysis) {
                             console.log(`  ${topic.topic}: ${quotedAnalysis[topic.topic]}`);
                         }
@@ -193,14 +223,14 @@ function findPostElement(postId) {
         throw new Error('postId must be a string');
     }
     const cellInnerDivs = document.querySelectorAll('[data-testid="cellInnerDiv"]');
-    
+
     for (const div of cellInnerDivs) {
         const link = div.querySelector(`a[href*="/status/${postId}"]`);
         if (link) {
             return div;
         }
     }
-    
+
     return null; // Return null if no matching element is found
 }
 window.findPostElement = findPostElement;
@@ -225,10 +255,14 @@ console.log('To reset the cache, run resetCache() in the console.');
 async function analyzeTweet(tweetText, apiKey) {
     let retries = 0;
     const maxRetries = 3;
+
+    // Use only enabled topics for the prompt
+    const enabledTopics = topicsConfig.filter(t => t.enabled);
+
     const messages = [
         {
             role: "system",
-            content: `Your task is to evaluate Tweets/X posts. Always respond in JSON. Follow this format:\n\n{\n${topicsConfig.map(topic => `    "${topic.topic}": 0.0`).join(',\n')}\n}\n\nRate the provided post from 0.0 to 1.0 for each topic. Here are the descriptions for each topic:\n\n${topicsConfig.map(topic => `${topic.topic}: ${topic.description}`).join('\n')}`
+            content: `Your task is to evaluate Tweets/X posts. Always respond in JSON. Follow this format:\n\n{\n${enabledTopics.map(topic => `    "${topic.topic}": 0.0`).join(',\n')}\n}\n\nRate the provided post from 0.0 to 1.0 for each topic. Here are the descriptions for each topic:\n\n${enabledTopics.map(topic => `${topic.topic}: ${topic.description}`).join('\n')}`
         },
         {
             role: "user",
@@ -278,21 +312,14 @@ async function analyzeTweet(tweetText, apiKey) {
     return {};
 }
 
-// Function to get or set the OpenRouter API key
+// Function to get the OpenRouter API key from storage
 async function getOpenRouterApiKey() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['OPENROUTER_API_KEY'], result => {
             if (result.OPENROUTER_API_KEY) {
                 resolve(result.OPENROUTER_API_KEY);
             } else {
-                const apiKey = prompt("Please enter your OpenRouter API key:");
-                if (apiKey) {
-                    chrome.storage.local.set({ OPENROUTER_API_KEY: apiKey }, () => {
-                        resolve(apiKey);
-                    });
-                } else {
-                    resolve(null);
-                }
+                resolve(null);
             }
         });
     });
@@ -330,15 +357,22 @@ function observeForNewContent() {
             debouncedCheck();
         }
     });
-    
+
     observer.observe(document.body, {
         childList: true,
         subtree: true
     });
 }
 
-// Initial check when the page loads
-if (window.location.hostname === 'x.com') {
-    checkForNewPosts();
-    observeForNewContent();
+// Initialize the extension
+async function init() {
+    if (window.location.hostname === 'x.com') {
+        await initConfig();
+        console.log('X Content Filter: Initialized with config', topicsConfig);
+        checkForNewPosts();
+        observeForNewContent();
+    }
 }
+
+// Start initialization
+init();

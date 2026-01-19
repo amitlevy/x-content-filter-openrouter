@@ -10,6 +10,13 @@
     "https://x.com/*",
     "https://openrouter.ai/*"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "X Content Filter Settings"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://x.com/*"],
