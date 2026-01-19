@@ -2,7 +2,7 @@
 
 ## Overview
 
-The X Content Filter is a browser extension that analyzes and filters content on X.com based on configured topics using AI. It uses the OpenRouter API to perform the analysis, giving you access to powerful and cheap LLM models, by default Llama 8B, costing negligible amounts of money, though you do need to provide your own key.
+The X Content Filter is a browser extension that analyzes and filters content on X.com based on configured topics using AI. It uses the OpenRouter API to perform the analysis, giving you access to powerful and cheap LLM models, by default Qwen3 8B, costing negligible amounts of money, though you do need to provide your own key.
 
 ## Features
 
@@ -57,7 +57,7 @@ const topicsConfig = [
 ];
 ```
 
-The extension is configured to use the "meta-llama/llama-3-8b-instruct" model from OpenRouter, but you can modify this in the code if desired. OpenRouter supports many other models as well.
+The extension is configured to use the "qwen/qwen3-8b" model from OpenRouter, but you can modify this in the code if desired. OpenRouter supports many other models as well.
 
 ## Files
 
