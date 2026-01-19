@@ -263,7 +263,7 @@
                         },
                         data: JSON.stringify({
                             messages: messages,
-                            model: "meta-llama/llama-3-8b-instruct", // OpenRouter model ID for Llama 3
+                            model: "qwen/qwen3-8b", // OpenRouter model ID for Qwen3 8B
                             temperature: 1,
                             max_tokens: 1024,
                             top_p: 1,
