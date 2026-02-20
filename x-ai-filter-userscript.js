@@ -124,30 +124,53 @@
                 // Apply blur immediately while analyzing
                 post.classList.add('x-content-filter-blurred', 'x-content-filter-analyzing');
 
-                // Check for cached analysis first
-                let analysis = await getCachedAnalysis(postId);
-                if (!analysis) {
-                    // No cached result, need to analyze
-                    analysis = await analyzeTweet(postText, apiKey);
-                    await cacheAnalysis(postId, analysis);
-                }
+                // Race analysis against a 15-second timeout
+                const ANALYSIS_TIMEOUT_MS = 15000;
+                let timedOut = false;
 
-                // Analyze quoted tweet if present
-                let quotedAnalysis = null;
-                if (quotedTweetText) {
-                    const quotedCacheKey = `${postId}_quoted`;
-                    quotedAnalysis = await getCachedAnalysis(quotedCacheKey);
-                    if (!quotedAnalysis) {
-                        quotedAnalysis = await analyzeTweet(quotedTweetText, apiKey);
-                        await cacheAnalysis(quotedCacheKey, quotedAnalysis);
+                const timeoutPromise = new Promise((resolve) => {
+                    setTimeout(() => {
+                        timedOut = true;
+                        resolve({ timedOut: true });
+                    }, ANALYSIS_TIMEOUT_MS);
+                });
+
+                const analysisPromise = (async () => {
+                    // Check for cached analysis first
+                    let analysis = await getCachedAnalysis(postId);
+                    if (!analysis) {
+                        // No cached result, need to analyze
+                        analysis = await analyzeTweet(postText, apiKey);
+                        await cacheAnalysis(postId, analysis);
                     }
-                }
+
+                    // Analyze quoted tweet if present
+                    let quotedAnalysis = null;
+                    if (quotedTweetText) {
+                        const quotedCacheKey = `${postId}_quoted`;
+                        quotedAnalysis = await getCachedAnalysis(quotedCacheKey);
+                        if (!quotedAnalysis) {
+                            quotedAnalysis = await analyzeTweet(quotedTweetText, apiKey);
+                            await cacheAnalysis(quotedCacheKey, quotedAnalysis);
+                        }
+                    }
+
+                    return { analysis, quotedAnalysis };
+                })();
+
+                const result = await Promise.race([analysisPromise, timeoutPromise]);
 
                 // Remove the analyzing indicator
                 post.classList.remove('x-content-filter-analyzing');
 
-                // Apply visibility based on analysis (including quoted tweet)
-                applyPostVisibility(postId, analysis, post, quotedAnalysis);
+                if (timedOut) {
+                    // Timeout reached - unblur the post
+                    console.warn(`X Content Filter: Analysis timed out for post ${postId}, unblurring.`);
+                    post.classList.remove('x-content-filter-blurred');
+                } else {
+                    // Apply visibility based on analysis (including quoted tweet)
+                    applyPostVisibility(postId, result.analysis, post, result.quotedAnalysis);
+                }
             }
         });
     }
